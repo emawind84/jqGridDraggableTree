@@ -1,73 +1,117 @@
 /**
- *  jqGrid Tree Draggable plugin
- *  
+ * jqGrid Customization
  */
-$.jgrid.extend({
-	_draggableTr: function(domelem){
-		var _this = this;
-		var $t = this[0];
-		var grid = $t;
-		
-		$(domelem).draggable({
-			helper: function( event ) {
-				var helper = $("<div class='ui-jqgrid'><table class='ui-jqgrid-btable'></table></div>");
-				var tr = $(event.currentTarget).clone().removeAttr("id");
-				tr.find(".tree-wrap").remove();
-				helper.find("table").append( tr );
-				console.log(helper[0]);
-				return helper[0];
-			},
-			opacity: 0.7,
-			appendTo: "body",
-			cursorAt: { top: 0, left: -20 },
-    		start: function(e, ui){
-    		}
-    	}).droppable({
-    		drop: function(e, ui){
-    			var parentId = $(e.target).attr("id");
-    			var parentRecord = $(grid).jqGrid('getLocalRow', parentId );
-    			var draggableRecord = $(grid).jqGrid('getLocalRow', ui.draggable.prop('id') );
-    			
-    			console.log("parentid " + parentId);
-    			// test if is leaf or not
-    			var treeReader = $(grid).jqGrid('getGridParam', 'treeReader');
-    			var treedatatype = $(grid).jqGrid('getGridParam', 'treedatatype');
-    			if(treedatatype != "local") { return; }
-    			if(draggableRecord[treeReader.leaf_field] == false ) { return; }
+(function ($) {
+"use strict";
 
-    			$(grid).jqGrid('delTreeNode', ui.draggable.prop('id') );
+	if( !$.jgrid ) return;
 
-    			if(parentRecord[treeReader.leaf_field] == true ) {
-    				var ppNode = $(grid).jqGrid('getNodeParent', parentRecord);
-    				console.log("is leaf  " + ppNode['_id_']);
-    				$(grid).jqGrid('addChildNode', ui.draggable.prop('id'), ppNode['_id_'], draggableRecord );
-    			} else {
-    				console.log("is not leaf");
-    				$(grid).jqGrid('addChildNode', ui.draggable.prop('id'), parentId, draggableRecord );
-    			}
-    			
-    			_this._draggableTr( $( '#' + $.jgrid.jqID( ui.draggable.prop('id') )  ) );
-    			
-    			if( $t.p.onDroppedRow && $.isFunction( $t.p.onDroppedRow )) { 
-    				$t.p.onDroppedRow.call($t, ui.draggable.prop('id'), e); 
-    			}
-    		}
-    	});
-	},
-	
-	draggableTree: function(){
-		var _this = this;
-		var $t = this[0];
-		
-		// TODO to fix
-		$('tr', $t ).each(function(index){
-			_this._draggableTr(this);
-		});
-		
-		$(this).on('jqGridLoadComplete', function(){
-			$('tr', $t ).each(function(index){
-				_this._draggableTr(this);
+	// custom functions added to $.fn.jqGrid
+	$.jgrid.extend({
+
+		draggableTree: function ( options ) {
+			/************************************************************
+			@desc Activate draggable functionality on a tree list
+
+			IN:
+				@param option - (true/false) will activate/deactivate the draggable feature.
+			************************************************************/
+			
+			var enabled = true;
+			if( typeof options === "boolean" ){
+				enabled = options;
+				options = {};
+			}
+			
+			// the return is useful for method chaining
+			return this.each(function () {
+				var grid = this;
+				var treedatatype = $(grid).jqGrid('getGridParam', 'treedatatype');
+				if (treedatatype != "local") {
+					console.warn("treedatatype have to be 'local'");
+					return;
+				}
+
+				// TODO to fix
+				_doDragAndDrop(grid, enabled, options);
+
+				$(this).on('jqGridLoadComplete', function () {
+					_doDragAndDrop(grid, enabled, options);
+				});
 			});
+		},
+
+	});
+
+	function _draggableTr(grid, row, options ) {
+		var options = $.extend( true, {
+			drag: {
+				disabled: false,
+				addClasses: false, //  will prevent the ui-draggable class from being added. ( performance optimization )
+				helper: function (event) {
+					var helper = $("<div class='ui-draggable-helper'>Move 1 item</div>");
+					/*var tr = $(event.currentTarget).clone().removeAttr("id");
+					tr.find(".tree-wrap").remove();
+					helper.find("table").append(tr);*/
+					return helper[0];
+				},
+				opacity: 1,
+				appendTo: "body",
+				cursorAt: {
+					top: 0,
+					left: -20
+				},
+				start: function (e, ui) {}
+			},
+			drop: {
+				disabled: false,
+				addClasses: false, //  will prevent the ui-draggable class from being added. ( performance optimization )
+				drop: function (e, ui) {
+					var targetId = $(e.target).attr("id");
+					var targetRecord = $(grid).jqGrid('getLocalRow', targetId);
+					var draggableRecord = $(grid).jqGrid('getLocalRow', ui.draggable.prop('id'));
+					var oriParent = $(grid).jqGrid('getNodeParent', draggableRecord );
+					
+					// test if is leaf or not
+					/*var treeReader = $(grid).jqGrid('getGridParam', 'treeReader');
+					if (draggableRecord[treeReader.leaf_field] == false) {
+						return;
+					}*/
+					if( $(grid).jqGrid('getNodeChildren', draggableRecord ).length ){
+						return;
+					}
+					
+					// delete original row
+					$(grid).jqGrid('delTreeNode', ui.draggable.prop('id'));
+
+					// add dropped row
+					$(grid).jqGrid('addChildNode', ui.draggable.prop('id'), targetId, draggableRecord);
+
+					// event call
+					if ( grid.p.onDroppedRow && $.isFunction(grid.p.onDroppedRow)) {
+						if( grid.p.onDroppedRow.call(grid, ui.draggable.prop('id'), e) === false ) {
+							// revert dropping
+							$(grid).jqGrid('delTreeNode', ui.draggable.prop('id'));
+							$(grid).jqGrid('addChildNode', ui.draggable.prop('id'), oriParent[grid.p.localReader.id], draggableRecord);
+						}
+					}
+					
+					// add draggable property to the new row
+					_draggableTr( grid, $('#' + $.jgrid.jqID( ui.draggable.prop('id') ) ), options );
+				}
+			}
+		}, options||{} );
+		$(row).draggable( options.drag ).droppable( options.drop );	
+	}
+
+	function _doDragAndDrop(grid, enabled, options){
+		$('tr', grid).each(function (index) {
+			if( $(this).is(":data(ui-draggable)") && !enabled ) {
+				$(this).draggable('destroy');
+			} else if( !$(this).is(":data(ui-draggable)") && enabled && !$(this).hasClass('not-draggable-row') ) {
+				_draggableTr(grid, this, options );
+			}
 		});
 	}
-});
+
+})(jQuery);
